@@ -1,0 +1,17 @@
+tool.uv.package = true
+
+[project]
+name = "aidev2025-t1"
+version = "0.0.1"
+description = "A text summarizer"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "transformers>=4.56.1",
+    "torch>=2.8.0",
+    "sentencepiece>=0.2.1",
+    "protobuf>=6.32.1",
+]
+
+[project.scripts]
+summarize = "cli:main"
