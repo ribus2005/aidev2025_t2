@@ -80,6 +80,8 @@ class MT5XLSumModel:
             The model output.
         """
 
+        assert cutoff_len > 0, "invalid cutoff"
+
         out = self.model(
             text,
             max_new_tokens=cutoff_len,
