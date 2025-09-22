@@ -1,6 +1,10 @@
 import sys
 import logging
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from argparse import (
+    ArgumentDefaultsHelpFormatter,
+    ArgumentParser,
+    BooleanOptionalAction,
+)
 
 parser = ArgumentParser(
     description="Summarize your text using https://huggingface.co/csebuetnlp/mT5_multilingual_XLSum.",
@@ -19,8 +23,43 @@ parser.add_argument(
     "-d",
     "--device",
     type=str,
-    help="The device to host the model.",
-    default="cuda",
+    help="The device to host the model. (auto means CUDA if it's available, otherwise CPU)",
+    default="auto",
+)
+
+parser.add_argument(
+    "--min-length",
+    type=int,
+    help="The minimum length of the sequence to be generated.",
+    default=5,
+)
+
+parser.add_argument(
+    "--do-sample",
+    action=BooleanOptionalAction,
+    help="Whether or not to use sampling; use greedy decoding otherwise.",
+    default=False,
+)
+
+parser.add_argument(
+    "--num-beams",
+    type=int,
+    help="Number of beams for beam search. 1 means no beam search.",
+    default=4,
+)
+
+parser.add_argument(
+    "--no-repeat-ngram-size",
+    type=int,
+    help="If set to int > 0, all ngrams of that size can only occur once.",
+    default=2,
+)
+
+parser.add_argument(
+    "--length-penalty",
+    type=float,
+    help="Exponential penalty to the length. 1.0 means no penalty. Set to values < 1.0 to encourage shorter sequences, to a value > 1.0 to encourage longer sequences.",
+    default=1.0,
 )
 
 parser.add_argument(
@@ -64,7 +103,13 @@ def main():
     try:
         from model import MT5XLSumModel
 
-        model = MT5XLSumModel(device=args.device)
+        if args.device == "auto":
+            device = None
+        else:
+            device = args.device
+
+        model = MT5XLSumModel(device=device)
+
     except Exception as e:
         log.fatal(f"Error while loading the model: {e}")
         exit(1)
@@ -80,7 +125,15 @@ def main():
     log.info("summarizing")
 
     try:
-        summarized = model(text, cutoff_len=args.cutoff)
+        summarized = model(
+            text,
+            cutoff_len=args.cutoff,
+            min_len=args.min_length,
+            do_sample=args.do_sample,
+            num_beams=args.num_beams,
+            no_repeat_ngram_size=args.no_repeat_ngram_size,
+            length_penalty=args.length_penalty,
+        )
     except Exception as e:
         log.fatal(f"Error during inference: {e}")
         exit(1)

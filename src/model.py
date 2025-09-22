@@ -1,4 +1,5 @@
 import re
+import torch
 from transformers import AutoTokenizer, pipeline
 
 
@@ -8,7 +9,7 @@ class MT5XLSumModel:
     https://huggingface.co/csebuetnlp/mT5_multilingual_XLSum
     """
 
-    def __init__(self, *, device: str = "cuda"):
+    def __init__(self, *, device: str = None):
         """
         Initialize and load the model.
 
@@ -25,6 +26,12 @@ class MT5XLSumModel:
             use_fast=False,
             legacy=False,
         )
+
+        if device is None:
+            if torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
 
         self.model = pipeline(
             "summarization",
@@ -59,7 +66,17 @@ class MT5XLSumModel:
 
         return text
 
-    def __call__(self, text: str, *, cutoff_len: int = 50) -> str:
+    def __call__(
+        self,
+        text: str,
+        *,
+        cutoff_len: int = 50,
+        min_len: int = 5,
+        do_sample: bool = False,
+        num_beams: int = 4,
+        no_repeat_ngram_size: int = 2,
+        length_penalty: float = 1.0,
+    ) -> str:
         """
         Run the model.
 
@@ -74,22 +91,43 @@ class MT5XLSumModel:
             try to generate a good summary with length less or equal to this
             number, just that the generation will be stopped at this length.
 
+        min_len: int
+            The minimum length of the sequence to be generated.
+
+        do_sample: bool
+            Whether or not to use sampling; use greedy decoding otherwise.
+
+        num_beams: int
+            Number of beams for beam search. 1 means no beam search.
+
+        no_repeat_ngram_size: int
+            If set to int > 0, all ngrams of that size can only occur once.
+
+        length_penalty: float
+            Exponential penalty to the length. 1.0 means no penalty.
+            Set to values < 1.0 in order to encourage the model to generate shorter sequences,
+            to a value > 1.0 in order to encourage the model to produce longer sequences.
+
         Returns
         -------
         str
             The model output.
         """
 
-        assert cutoff_len > 0, "invalid cutoff"
+        assert cutoff_len > 0, "cutoff must be positive"
+        assert min_len > 0, "min_len must be positive"
+        assert num_beams > 0, "num_beams must be positive"
+        assert no_repeat_ngram_size >= 0, "no_repeat_ngram_size must be non-negative"
+        assert length_penalty > 0, "length_penalty must be positive"
 
         out = self.model(
             text,
             max_new_tokens=cutoff_len,
-            min_length=5,
-            do_sample=False,
-            num_beams=4,
-            no_repeat_ngram_size=2,
-            length_penalty=1.0,
+            min_length=min_len,
+            do_sample=do_sample,
+            num_beams=num_beams,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            length_penalty=length_penalty,
         )
 
         return out[0]["summary_text"].strip()
