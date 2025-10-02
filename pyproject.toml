@@ -1,7 +1,7 @@
 tool.uv.package = true
 
 [project]
-name = "aidev2025-t1"
+name = "aidev2025-t2"
 version = "0.0.1"
 description = "A text summarizer"
 readme = "README.md"

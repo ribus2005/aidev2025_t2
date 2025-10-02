@@ -4,12 +4,25 @@ from argparse import (
     ArgumentDefaultsHelpFormatter,
     ArgumentParser,
     BooleanOptionalAction,
+    FileType,
+    ArgumentTypeError,
 )
+
+
+def uint(value):
+    '''
+    целочисленный тип данных для количества абзацев в тексте
+    '''
+    ivalue = int(value)
+    if ivalue <= 0:
+        raise ArgumentTypeError(f"{value} не положительное число")
+    return ivalue
 
 parser = ArgumentParser(
     description="Summarize your text using https://huggingface.co/csebuetnlp/mT5_multilingual_XLSum.",
     formatter_class=ArgumentDefaultsHelpFormatter,
 )
+
 
 parser.add_argument(
     "-c",
@@ -59,7 +72,7 @@ parser.add_argument(
     "--length-penalty",
     type=float,
     help="Exponential penalty to the length. 1.0 means no penalty. Set to values < 1.0 to encourage shorter sequences, to a value > 1.0 to encourage longer sequences.",
-    default=1.0,
+    default=5.0,
 )
 
 parser.add_argument(
@@ -69,6 +82,23 @@ parser.add_argument(
     help="Log level [DEBUG, INFO, WARNING, ERROR, CRITICAL]",
     default="ERROR",
 )
+
+parser.add_argument(
+    "-p",
+    "--paragraphs",
+    type = uint,
+    help = "paragpraph count",
+    default= 3,
+)
+
+parser.add_argument(
+    "--verbose",
+    action = "store_true",
+    help = "show per paragraph results",
+    default = False,
+)
+
+parser.add_argument('TEXT_FILE', type=FileType('r'))
 
 
 def setup_logging(level: str):
@@ -85,61 +115,113 @@ def setup_logging(level: str):
     tf_logging.set_verbosity(level)
 
 
-def main():
-    args = parser.parse_args()
+def split_text(text, amount=3, separator='\n\n'):
+    '''
+    разбивает текстовый файл на список абзацев
+    '''
+    try:
+        content = text
+        paragraphs = [p.strip() for p in content.split(separator) if p.strip()]
+        if len(paragraphs) != amount:
+            raise ValueError(f"Количество абзацев в файле {len(paragraphs)} не совпадает с целевым {amount}")
+        return paragraphs
+    except Exception as e:
+        raise ValueError(f"Ошибка в разделении на абзацы {e}")
+    
 
-    setup_logging(args.log_level)
-    log = logging.getLogger(__name__)
-
-    if sys.stdin.isatty():
-        print("Enter your text and then press Ctrl+D:", file=sys.stderr)
-    else:
-        log.info("reading the text")
-
-    text = sys.stdin.read()
-
-    log.info("loading model")
-
+def load_model(device):
+    '''
+    загружает модель на устройство 
+    '''
     try:
         from model import MT5XLSumModel
 
-        if args.device == "auto":
+        if device == "auto":
             device = None
         else:
-            device = args.device
+            device = device
 
         model = MT5XLSumModel(device=device)
 
     except Exception as e:
-        log.fatal(f"Error while loading the model: {e}")
-        exit(1)
+        raise ValueError(f"ошибка при загрузке модели {e}")
+    
+    return model
+        
 
-    log.info("preprocessing")
+def deep_summarize(model, paragraphs, model_args={}, verbose=False):
+    '''
+    прогоняет через модель каждый абзац, а потом сумму результатов
+    '''
+    summarized = ''
+    for paragraph in paragraphs:
+        try:
+            prep = model.preprocess(paragraph)
+        except Exception as e:
+            raise ValueError(f"Error during preprocessing: {e}")
+            
+
+        try:
+            output = model(prep, **model_args)
+        except Exception as e:
+            raise ValueError(f"Error during inference: {e}")
+        if verbose:
+            print(20*'=')
+            print(output)
+            print(20*'=')
+        summarized += output + "\n"
 
     try:
-        text = MT5XLSumModel.preprocess(text)
+        result = model(summarized, **model_args)
     except Exception as e:
-        log.fatal(f"Error during preprocessing: {e}")
-        exit(1)
+        raise ValueError(f"Error during final inference: {e}")
+    
+    return result
 
-    log.info("summarizing")
+def count_words(text):
+    '''
+    считает количество слов в тексте 
+    '''
+    words = text.split()
+    return len(words)
+
+def main():
+    args = parser.parse_args()
+    setup_logging(args.log_level)
+    log = logging.getLogger(__name__)
+
+    
+
+    model_args = {
+                   'cutoff_len': args.cutoff,
+                   'min_len': args.min_length,
+                   "do_sample": args.do_sample, 
+                   'num_beams': args.num_beams, 
+                   'no_repeat_ngram_size': args.no_repeat_ngram_size,
+                   'length_penalty': args.length_penalty
+                   }
 
     try:
-        summarized = model(
-            text,
-            cutoff_len=args.cutoff,
-            min_len=args.min_length,
-            do_sample=args.do_sample,
-            num_beams=args.num_beams,
-            no_repeat_ngram_size=args.no_repeat_ngram_size,
-            length_penalty=args.length_penalty,
-        )
+        input_text = args.TEXT_FILE.read()
+        log.info('loading model')
+        model = load_model(args.device)
+
+        log.info("reading the text")
+        paragraphs = split_text(input_text, args.paragraphs)
+
+        log.info('processing text')
+        summarized = deep_summarize(model, paragraphs, model_args, args.verbose)
+
+        log.info('finished')
+        input_len = count_words(input_text)
+        output_len = count_words(summarized)
     except Exception as e:
-        log.fatal(f"Error during inference: {e}")
-        exit(1)
+        log.fatal(e)
+        raise ValueError(e)    
 
-    print(summarized, end="")
-
+    print("Результат:")
+    print(summarized)
+    print(f'{100*(output_len/input_len):.0f}% от длины первоначального текста')
 
 if __name__ == "__main__":
     main()
