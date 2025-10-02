@@ -147,6 +147,13 @@ def load_model(device):
         raise ValueError(f"ошибка при загрузке модели {e}")
     
     return model
+
+def count_words(text):
+    '''
+    считает количество слов в тексте 
+    '''
+    words = text.split()
+    return len(words)
         
 
 def deep_summarize(model, paragraphs, model_args={}, verbose=False):
@@ -176,14 +183,10 @@ def deep_summarize(model, paragraphs, model_args={}, verbose=False):
     except Exception as e:
         raise ValueError(f"Error during final inference: {e}")
     
-    return result
+    
+    return result, count_words(summarized)
 
-def count_words(text):
-    '''
-    считает количество слов в тексте 
-    '''
-    words = text.split()
-    return len(words)
+
 
 def main():
     args = parser.parse_args()
@@ -210,7 +213,7 @@ def main():
         paragraphs = split_text(input_text, args.paragraphs)
 
         log.info('processing text')
-        summarized = deep_summarize(model, paragraphs, model_args, args.verbose)
+        summarized, medium_len = deep_summarize(model, paragraphs, model_args, args.verbose)
 
         log.info('finished')
         input_len = count_words(input_text)
@@ -222,6 +225,7 @@ def main():
     print("Результат:")
     print(summarized)
     print(f'{100*(output_len/input_len):.0f}% от длины первоначального текста')
+    print(f'{100*(output_len/medium_len):.0f}% от суммарной длины сокращений абзацев')
 
 if __name__ == "__main__":
     main()
